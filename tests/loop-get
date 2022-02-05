@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+# Stress test /hash/{id} endpoint
+# Igor P. Zenkov <izenkov@gmail.com>
+# Created Feb 3, 2022
+
+# constants
+
+# shellcheck disable=SC2155
+declare -r SCRIPT_NAME=$(basename "$0")
+declare -r SCRIPT_VER='1.0.0 Feb 3, 2022'
+declare -r SCRIPT_AUTHOR='Igor P. Zenkov'
+
+declare -r MAX_INDEX=1000000
+
+function bold { echo -e "\e[96m$*\e[0m"; }
+function err  { >&2 echo -e "$SCRIPT_NAME: \e[91m$*\e[0m"; }
+function die  { err "$@"; exit 1; }
+
+function loop_up {
+  local -i i
+  local out
+  for ((i = 1; i <= MAX_INDEX; i++)); do
+    out=$(curl -s http://localhost:8080/hash/"$i") || { err "curl error: $?"; return 1; }
+    echo "$i $out" 1>&2
+    case $out in
+        ETL:*) echo "$i"; break;;
+      ERROR:*) echo "$i"; break;;
+    esac
+  done
+}
+
+function loop_dn {
+  local -i top_idx=$1
+  local -i i
+  local out
+  for ((i = top_idx; i > 0; i--)); do
+    out=$(curl -s http://localhost:8080/hash/"$i") || { err "curl error: $?"; return 1; }
+    echo "$i $out" 1>&2
+  done
+}
+
+function usage {
+  bold "$SCRIPT_NAME $SCRIPT_VER by $SCRIPT_AUTHOR"
+  echo
+  echo "Usage: $SCRIPT_NAME"
+  echo "       $SCRIPT_NAME <num>"
+  echo "       $SCRIPT_NAME -h"
+  echo
+  bold ' Where:'
+  echo
+  echo "  <num>  Loop <num> times"
+  echo '  -h     Show help'
+  echo
+  bold ' Like:'
+  echo
+  echo "  $SCRIPT_NAME     Loop forever"
+  echo "  $SCRIPT_NAME 10  Loop 10 times"
+  echo
+}
+
+function loop {
+  local -i top_idx cnt=0 max_cnt=1
+  (($#!=0)) && max_cnt=$1
+  while ((cnt < max_cnt)); do
+    top_idx=$(loop_up) || break
+    loop_dn "$top_idx" || break
+    (($#!=0)) && ((cnt++))
+  done
+}
+
+function main {
+  (($#>1)) && err 'too many arguments'
+  case $1 in
+    -h) usage;;
+     *) loop "$@";;
+  esac
+}
+
+main "$@"
+

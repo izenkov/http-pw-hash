@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+
+# Test http-pw-hash API
+# Igor P. Zenkov <izenkov@gmail.com>
+# Created Feb 1, 2022
+
+# constants
+
+# shellcheck disable=SC2155
+declare -r  SCRIPT_NAME=$(basename "$0")
+declare -r  SCRIPT_VER='1.0.0 Feb 1, 2022'
+declare -r  SCRIPT_AUTHOR='Igor P. Zenkov'
+declare -r  SCRIPT_CFG="$0.conf"
+
+function bold { echo -e "\e[96m$*\e[0m"; }
+function err  { >&2 echo -e "$SCRIPT_NAME: \e[91m$*\e[0m"; }
+function dbg  { >&2 echo -e "$1"; }
+function die  { err "$@"; exit 1; }
+
+function lst_tests {
+  local line char
+  while IFS= read -r -d $'\n' line; do
+    ((${#line}== 0)) && continue   # skip empty lines
+    char=${line::1}                # get first character
+    [[ $char == '#' ]] && continue # skip comments
+    [[ $char == '!' ]] && continue # skip code
+    echo "$line"
+  done < <(cat "$SCRIPT_CFG")
+}
+
+function assert_file {
+  [[ -f $1 ]] || die "$1 not found"
+}
+
+function sel_test {
+  local -a  tests
+  readarray -t tests < <(lst_tests)
+  local test ok=1
+  select test in "${tests[@]}" 'Cancel'; do
+    case $test in
+     'Cancel') break;;
+      *      ) ((REPLY >= 1 && REPLY <= ${#tests[@]})) && { ok=0; break; };;
+    esac
+  done
+  echo "$test"
+  ((ok==0))
+}
+
+# handlers
+
+function run_test {
+  local -r test="$*"
+  eval "$test" || die "curl error: $?"
+}
+
+function run_test_sel {
+  local line;
+  if line=$(sel_test); then
+    run_test "$line"
+  fi
+}
+
+# args
+
+function one_arg {
+  case $1 in
+    '-?') run_test_sel;;
+    '-l') lst_tests;;
+    '-h') usage;;
+    -*  ) die "'$1' not a valid command";;
+    *   ) run_test "$1";;
+  esac
+}
+
+function usage {
+  bold "$SCRIPT_NAME $SCRIPT_VER by $SCRIPT_AUTHOR"
+  echo
+  echo "Usage: $SCRIPT_NAME TEST"
+  echo "       $SCRIPT_NAME -?"
+  echo "       $SCRIPT_NAME -l"
+  echo "       $SCRIPT_NAME -h"
+  echo
+  bold ' Where:'
+  echo
+  echo '  TEST     Curl test'
+  echo '  -?       Select test to run'
+  echo '  -l       List tests'
+  echo '  -h       Show help'
+  echo
+  bold ' Like:'
+  echo
+  echo "  $SCRIPT_NAME curl --data 'password=angryMonkey' http://localhost:8080/hash"
+  echo "  $SCRIPT_NAME -?"
+  echo "  $SCRIPT_NAME -l"
+  echo
+}
+
+function main {
+  case $# in
+    0) usage;;
+    1) one_arg "$@";;
+    *) run_test "$@";;
+    #*) err 'too many arguments';;
+  esac
+}
+
+main "$@"

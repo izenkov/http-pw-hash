@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+
+# Stress test /hash endpoint
+# Igor P. Zenkov <izenkov@gmail.com>
+# Created Feb 3, 2022
+
+# constants
+
+# shellcheck disable=SC2155
+declare -r SCRIPT_NAME=$(basename "$0")
+declare -r SCRIPT_VER='1.0.0 Feb 3, 2022'
+declare -r SCRIPT_AUTHOR='Igor P. Zenkov'
+
+declare -r PASSWORDS_FILE='./passwords.txt'
+declare -r LOCAL_LOG_FILE='./bulk-hash.log'
+
+function bold { echo -e "\e[96m$*\e[0m"; }
+function err  { >&2 echo -e "$SCRIPT_NAME: \e[91m$*\e[0m"; }
+function die  { err "$@"; exit 1; }
+
+function assert_file { [[ -f "$1" ]] || die "File '$1' not found"; }
+
+# output to terminal
+function hash_passwords {
+  local -i max_count cnt=0
+  local -a passwords
+  local pass len arg cmd
+  readarray -t passwords < <(cat "$PASSWORDS_FILE")
+  max_count=${#passwords[@]}
+  if (($#!=0)); then
+    [[ "$1" != '-all' ]] && max_count=$1
+  fi
+  echo "bulk-hash $max_count passwords ..."
+  for pass in "${passwords[@]}"; do
+    len=${#pass}
+    ((len==0)) && continue
+    printf -v arg "'%s\'" "password=$pass"
+    cmd=(curl -s --data "$arg" http://localhost:8080/hash)
+    eval "${cmd[*]}" || die "curl error: $?"
+    ((cnt++)); ((cnt>=max_count)) && break
+  done
+}
+
+# output to log file
+function hash_passwords_quiet {
+  local -i max_count cnt=0
+  local -a passwords
+  local pass len arg cmd
+  readarray -t passwords < <(cat "$PASSWORDS_FILE")
+  max_count=${#passwords[@]}
+  if (($#!=0)); then
+    [[ "$1" != '-all' ]] && max_count=$1
+  fi
+  echo "bulk-hash $max_count passwords ..."
+  for pass in "${passwords[@]}"; do
+    len=${#pass}
+    ((len==0)) && continue
+    printf -v arg "'%s\'" "password=$pass"
+    cmd=(curl -s --data "$arg" http://localhost:8080/hash '>>' "$LOCAL_LOG_FILE")
+    eval "${cmd[*]}" || die "curl error: $?"
+    ((cnt++)); ((cnt>=max_count)) && break
+  done
+}
+
+function usage {
+  bold "$SCRIPT_NAME $SCRIPT_VER by $SCRIPT_AUTHOR"
+  echo
+  echo "Usage: $SCRIPT_NAME -all"
+  echo "       $SCRIPT_NAME <num>"
+  echo "       $SCRIPT_NAME -q -all"
+  echo "       $SCRIPT_NAME -q <num>"
+  echo "       $SCRIPT_NAME -h"
+  echo
+  bold ' Where:'
+  echo
+  echo "  -all     Hash all passwords from $PASSWORDS_FILE"
+  echo "  <num>    Hash <num> of passwords from $PASSWORDS_FILE"
+  echo "  -q       Quiet mode, sends stdout to $LOCAL_LOG_FILE"
+  echo '  -h       Show help'
+  echo
+  bold ' Like:'
+  echo
+  echo "  $SCRIPT_NAME -all"
+  echo "  $SCRIPT_NAME 10"
+  echo "  $SCRIPT_NAME -q -all"
+  echo "  $SCRIPT_NAME -q 10000"
+  echo
+}
+
+function one_arg {
+  case $1 in
+    '-q') die "missing <num> argument";;
+    '-h') usage;;
+  '-all') hash_passwords "$@";;
+      -*) die "'$1' not a valid command";;
+       *) hash_passwords "$@";;
+  esac
+}
+
+function two_arg {
+  local -r opt=$1
+  shift
+  case $opt in
+    '-q') hash_passwords_quiet "$@";;
+       *) die "'$1' not a valid command";;
+  esac
+}
+
+function main {
+  assert_file "$PASSWORDS_FILE"
+  case $# in
+    0) usage;;
+    1) one_arg "$@";;
+    2) two_arg "$@";;
+    *) err 'too many arguments';;
+  esac
+}
+
+main "$@"
+
